@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>웹 갤러그 (Web Galaga)</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #111;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+            touch-action: none; /* 모바일 스크롤 방지 */
+        }
+        #game-container {
+            position: relative;
+        }
+        canvas {
+            background-color: #000;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+            display: block;
+            max-width: 100vw;
+            max-height: 100vh;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+        }
+        #score-board {
+            position: absolute; top: 10px; left: 15px;
+            font-size: 20px; font-weight: bold; color: #0f0;
+        }
+        #lives-board {
+            position: absolute; top: 10px; right: 15px;
+            font-size: 20px; font-weight: bold; color: #f00;
+        }
+        #modal {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.85);
+            padding: 30px; border-radius: 10px;
+            text-align: center; border: 2px solid #0ff;
+            pointer-events: auto;
+            min-width: 250px;
+        }
+        h1 { color: #0ff; margin-top: 0; }
+        p { color: #ccc; font-size: 14px; line-height: 1.5; }
+        button {
+            background: #0ff; color: #000;
+            border: none; padding: 12px 24px;
+            font-size: 18px; font-weight: bold;
+            cursor: pointer; border-radius: 5px; margin-top: 15px;
+            transition: 0.2s;
+        }
+        button:hover { background: #0cc; transform: scale(1.05); }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas" width="400" height="600"></canvas>
+        <div id="ui-layer">
+            <div id="score-board">SCORE: <span id="score">0</span></div>
+            <div id="lives-board">LIFE: <span id="lives">3</span></div>
+        </div>
+        <div id="modal">
+            <h1 id="modal-title">WEB GALAGA</h1>
+            <p>
+                <b>[PC]</b> 방향키 좌우 이동, 스페이스바 발사<br>
+                <b>[모바일]</b> 화면 터치 드래그 이동 (자동 발사)
+            </p>
+            <button id="start-btn">GAME START</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const uiScore = document.getElementById('score');
+        const uiLives = document.getElementById('lives');
+        const modal = document.getElementById('modal');
+        const modalTitle = document.getElementById('modal-title');
+        const startBtn = document.getElementById('start-btn');
+
+        // --- 웹 오디오 API를 이용한 8비트 레트로 사운드 생성기 ---
+        const SoundFX = {
+            ctx: null,
+            init: function() {
+                if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+            },
+            playShoot: function() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                
+                osc.type = 'square'; // 레트로한 기계음 소리
+                osc.frequency.setValueAtTime(800, this.ctx.currentTime); // 높은 음에서
+                osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.1); // 순식간에 낮은 음으로 떨어짐 (뿅!)
+                
+                gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                osc.start(); osc.stop(this.ctx.currentTime + 0.1);
+            },
+            playExplosion: function() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                
+                osc.type = 'sawtooth'; // 거친 톱니파 소리
+                osc.frequency.setValueAtTime(100, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(10, this.ctx.currentTime + 0.3); // 웅장하게 꺼지는 소리 (콰쾅!)
+                
+                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+                osc.start(); osc.stop(this.ctx.currentTime + 0.3);
+            },
+            playBeam: function() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                
+                osc.type = 'sine'; // 기괴하고 웅웅거리는 외계인 광선 소리
+                osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(600, this.ctx.currentTime + 0.5);
+                osc.frequency.linearRampToValueAtTime(300, this.ctx.currentTime + 1.0);
+                
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 1.0);
+                osc.start(); osc.stop(this.ctx.currentTime + 1.0);
+            },
+            playDamage: function() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                
+                osc.type = 'triangle'; // 둔탁하고 짧은 피격음
+                osc.frequency.setValueAtTime(200, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 0.2);
+                
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+                osc.start(); osc.stop(this.ctx.currentTime + 0.2);
+            },
+            playGameOver: function() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                
+                osc.type = 'sawtooth';
+                // 플레이어 파괴 시 1.5초간 길게 울려 퍼지는 콰아아앙 폭발음
+                osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1, this.ctx.currentTime + 1.5);
+                
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 1.5);
+                osc.start(); osc.stop(this.ctx.currentTime + 1.5);
+            }
+        };
+
+        // 게임 상태 및 변수
+        let gameState = 'START'; // START, PLAYING, GAME_OVER
+        let score = 0;
+        let lives = 3;
+        let level = 1; // 스테이지 난이도 조절용 변수
+        let animationId;
+
+        // 우주 배경 (별)
+        let stars = [];
+        for (let i = 0; i < 100; i++) {
+            stars.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                speed: Math.random() * 2 + 0.5,
+                size: Math.random() * 2
+            });
+        }
+
+        // 플레이어
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height - 50,
+            width: 30,
+            height: 30,
+            speed: 5,
+            color: '#0ff',
+            cooldown: 0,
+            isDead: false,
+            isCaught: false, // 납치 광선에 잡혔는지 여부
+            angle: 0         // 빙글빙글 도는 효과용
+        };
+
+        // 총알 및 적 배열
+        let bullets = [];
+        let enemyBullets = [];
+        let enemies = [];
+        let particles = []; // 폭발 파티클 배열
+        
+        // 적 이동 방향 및 속도 제어
+        let enemyDirection = 1;
+        let enemySpeed = 1;
+
+        // 입력 상태
+        const keys = { ArrowLeft: false, ArrowRight: false, Space: false };
+
+        // 이벤트 리스너 (키보드)
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'ArrowLeft') keys.ArrowLeft = true;
+            if (e.code === 'ArrowRight') keys.ArrowRight = true;
+            if (e.code === 'Space') {
+                keys.Space = true;
+                if (gameState !== 'PLAYING') {
+                    e.preventDefault(); // 스페이스바 화면 스크롤 방지
+                    startBtn.click(); // 게임 시작 버튼을 클릭한 것과 동일한 효과
+                }
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowLeft') keys.ArrowLeft = false;
+            if (e.code === 'ArrowRight') keys.ArrowRight = false;
+            if (e.code === 'Space') keys.Space = false;
+        });
+
+        // 이벤트 리스너 (모바일 터치)
+        let isTouching = false;
+        canvas.addEventListener('touchstart', (e) => {
+            if (gameState !== 'PLAYING') return;
+            isTouching = true;
+            player.x = e.touches[0].clientX - canvas.getBoundingClientRect().left;
+        });
+        canvas.addEventListener('touchmove', (e) => {
+            if (!isTouching || gameState !== 'PLAYING') return;
+            player.x = e.touches[0].clientX - canvas.getBoundingClientRect().left;
+        });
+        canvas.addEventListener('touchend', () => { isTouching = false; });
+
+        // 파티클 생성 함수
+        function spawnParticles(x, y, color, count) {
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: x, y: y,
+                    vx: (Math.random() - 0.5) * 8, // 사방으로 퍼지는 속도
+                    vy: (Math.random() - 0.5) * 8,
+                    size: Math.random() * 3 + 1,
+                    color: color,
+                    life: 1.0, // 파티클 수명 (1.0에서 0으로 감소하며 투명해짐)
+                    decay: Math.random() * 0.02 + 0.02
+                });
+            }
+        }
+
+        // 적군 생성 함수 (그리드 형태)
+        function initEnemies() {
+            enemies = [];
+            enemyDirection = 1;
+            // 레벨에 따라 서서히 속도 증가 (1레벨: 0.5, 2레벨: 0.8, 3레벨: 1.1 ...)
+            enemySpeed = 0.5 + ((level - 1) * 0.3);
+            const rows = 4;
+            const cols = 6;
+            const padding = 40;
+            const startX = 50;
+            const startY = 50;
+
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    // 레벨 3부터 맨 윗줄 가운데 두 마리는 '보스 갤러그'로 등장
+                    let isBoss = (level >= 3 && r === 0 && (c === 2 || c === 3));
+                
+                    // 보스 체력 설정 (레벨 6부터 2레벨마다 1씩 증가)
+                    let maxHp = 1;
+                    if (isBoss) maxHp = level < 6 ? 1 : Math.floor((level - 4) / 2) + 1;
+                
+                    enemies.push({
+                        x: startX + c * padding,
+                        y: startY + r * padding,
+                        width: isBoss ? 30 : 24,
+                        height: isBoss ? 30 : 24,
+                        type: isBoss ? 2 : (r % 2), // type 2가 보스
+                        state: 'grid', // 상태: grid(대열), diving(하강), beaming(광선), returning(복귀)
+                        timer: 0,
+                        hp: maxHp
+                    });
+                }
+            }
+        }
+
+        // 초기화 및 게임 시작
+        function startGame() {
+            SoundFX.init(); // 게임 시작 버튼을 누를 때 오디오 권한 활성화
+            score = 0;
+            lives = 3;
+            level = 1;
+            uiScore.innerText = score;
+            uiLives.innerText = lives;
+            player.x = canvas.width / 2;
+            player.y = canvas.height - 50; // 위치 초기화
+            player.isDead = false;
+            player.isCaught = false;
+            player.angle = 0;
+            bullets = [];
+            enemyBullets = [];
+            particles = [];
+            initEnemies();
+            
+            gameState = 'PLAYING';
+            modal.style.display = 'none';
+            
+            if (animationId) cancelAnimationFrame(animationId);
+            gameLoop();
+        }
+
+        startBtn.addEventListener('click', startGame);
+
+        // 충돌 검사 함수 (AABB)
+        function isColliding(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        function update() {
+            // 배경 별 이동 (게임 오버 상태에서도 계속 이동하도록 위로 올림)
+            stars.forEach(star => {
+                star.y += star.speed;
+                if (star.y > canvas.height) { star.y = 0; star.x = Math.random() * canvas.width; }
+            });
+
+            // 파티클 업데이트 (게임 오버 상태에서도 파편이 튀도록 함)
+            particles.forEach(p => {
+                p.x += p.vx; p.y += p.vy;
+                p.life -= p.decay;
+            });
+            particles = particles.filter(p => p.life > 0);
+
+            if (gameState !== 'PLAYING') return;
+
+            if (player.isCaught) {
+                // 광선에 잡혀서 끌려 올라가는 로직
+                player.angle += 0.2; // 빙글빙글 회전
+                let targetBoss = player.caughtBy;
+                let dx = targetBoss.x - player.x;
+                let dy = targetBoss.y - player.y;
+                player.x += dx * 0.03;
+                player.y += dy * 0.03;
+
+                // 보스에게 완전히 닿으면 라이프 깎이고 폭발
+                if (Math.sqrt(dx*dx + dy*dy) < 20) {
+                    player.isCaught = false;
+                    targetBoss.state = 'returning'; // 보스는 다시 올라감
+                    lives--;
+                    uiLives.innerText = lives;
+                    if (lives <= 0) {
+                        player.isDead = true;
+                        spawnParticles(player.x, player.y, '#0ff', 40);
+                        SoundFX.playGameOver();
+                        gameOver();
+                    } else {
+                        spawnParticles(player.x, player.y, '#f00', 20);
+                        SoundFX.playDamage();
+                        // 라이프가 남았으면 제자리로 부활
+                        player.x = canvas.width / 2;
+                        player.y = canvas.height - 50;
+                        player.angle = 0;
+                    }
+                }
+            } else {
+                // 평소 플레이어 이동
+                if (keys.ArrowLeft) player.x -= player.speed;
+                if (keys.ArrowRight) player.x += player.speed;
+                
+                if (player.x < player.width/2) player.x = player.width/2;
+                if (player.x > canvas.width - player.width/2) player.x = canvas.width - player.width/2;
+
+                // 광선 풀린 후 부드럽게 원위치로 떨어짐
+                if (player.y < canvas.height - 50) player.y += 4; 
+
+                // 총알 발사
+                if (player.cooldown > 0) player.cooldown--;
+                if ((keys.Space || isTouching) && player.cooldown === 0 && !player.isDead) {
+                    bullets.push({ x: player.x - 2, y: player.y - 15, width: 4, height: 10, speed: 10 });
+                    SoundFX.playShoot();
+                    player.cooldown = 15;
+                }
+            }
+
+            // 총알 이동 및 화면 밖 제거
+            bullets.forEach(b => b.y -= b.speed);
+            bullets = bullets.filter(b => b.y > 0);
+
+            enemyBullets.forEach(eb => eb.y += eb.speed);
+            enemyBullets = enemyBullets.filter(eb => eb.y < canvas.height);
+
+            // 적군 전체 이동 로직
+            let hitWall = false;
+            enemies.forEach(enemy => {
+                if (enemy.state === 'grid') {
+                    enemy.x += enemySpeed * enemyDirection;
+                    if (enemy.x > canvas.width - 20 || enemy.x < 20) hitWall = true;
+                    
+                    // 보스가 대열에 있다가 확률적으로 하강 시작!
+                    if (enemy.type === 2 && Math.random() < 0.001 * level && !player.isDead && !player.isCaught) {
+                        enemy.state = 'diving';
+                        enemy.targetX = player.x; // 플레이어 위치로 조준
+                        enemy.targetY = player.y - 150; // 플레이어 바로 위까지만
+                    }
+                } else if (enemy.state === 'diving') {
+                    let dx = enemy.targetX - enemy.x;
+                    let dy = enemy.targetY - enemy.y;
+                    let dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < 5) { // 목표 도달 시 광선 발사 시작
+                        enemy.state = 'beaming';
+                        enemy.timer = 120; // 약 2초간 빔 발사
+                    } else {
+                        enemy.x += (dx/dist) * 3;
+                        enemy.y += (dy/dist) * 3;
+                    }
+                } else if (enemy.state === 'beaming') {
+                    enemy.timer--;
+                    if (enemy.timer % 30 === 0) SoundFX.playBeam(); // 광선 소리 반복
+                    
+                    // 빔 영역 충돌 검사 (삼각형 모양)
+                    if (!player.isDead && !player.isCaught && player.y > enemy.y) {
+                        let dy = player.y - enemy.y;
+                        let beamWidthAtY = (dy / (canvas.height - enemy.y)) * 75; // 밑으로 갈수록 넓어짐
+                        if (Math.abs(player.x - enemy.x) < beamWidthAtY) {
+                            player.isCaught = true;
+                            player.caughtBy = enemy; // 누구한테 잡혔는지 저장
+                        }
+                    }
+                    
+                    if (enemy.timer <= 0) enemy.state = 'returning'; // 시간 지나면 복귀
+                } else if (enemy.state === 'returning') {
+                    enemy.y -= 2; // 위로 도망감
+                    if (enemy.y < -50) {
+                        enemy.y = 50; // 다시 화면 위에서 나타나 대열 합류
+                        enemy.state = 'grid';
+                    }
+                }
+            });
+
+            // 벽에 닿으면 방향 반대로 하고 아래로 조금 내려옴
+            if (hitWall) {
+                enemyDirection *= -1;
+                enemies.forEach(enemy => { if(enemy.state === 'grid') enemy.y += 15; });
+            }
+
+            // 적군 무작위 발사
+            let fireChance = 0.002 + (level * 0.0005);
+            enemies.forEach(enemy => {
+                if ((enemy.state === 'grid' || enemy.state === 'diving') && Math.random() < fireChance) {
+                    enemyBullets.push({ x: enemy.x - 2, y: enemy.y + 10, width: 4, height: 10, speed: 4 + level * 0.5 });
+                }
+            });
+
+            // 충돌 처리: 내 총알 -> 적군
+            for (let bIndex = bullets.length - 1; bIndex >= 0; bIndex--) {
+                let bullet = bullets[bIndex];
+                let hit = false;
+                for (let eIndex = enemies.length - 1; eIndex >= 0; eIndex--) {
+                    let enemy = enemies[eIndex];
+                    let eRect = { x: enemy.x - enemy.width/2, y: enemy.y - enemy.height/2, width: enemy.width, height: enemy.height };
+                    if (isColliding(bullet, eRect)) {
+                        hit = true;
+                        enemy.hp--; // 체력 깎기
+
+                        if (enemy.hp <= 0) {
+                            // 만약 보스를 죽였는데 플레이어가 잡혀있었다면 풀려남!
+                            if (player.isCaught && player.caughtBy === enemy) {
+                                player.isCaught = false; 
+                            }
+                            enemies.splice(eIndex, 1); // 적 삭제
+                            spawnParticles(enemy.x, enemy.y, enemy.type === 2 ? '#0f0' : (enemy.type % 2 === 0 ? '#ff0' : '#f0f'), 15); // 적 폭발 파티클 (보스는 초록색 파편)
+                            SoundFX.playExplosion(); // 적 격추 소리
+                            score += 100;
+                            uiScore.innerText = score;
+                        } else {
+                            // 보스가 안 죽고 버팀 (깡! 소리와 하얀 불꽃 튀김)
+                            spawnParticles(enemy.x, enemy.y, '#fff', 5);
+                            SoundFX.playDamage();
+                        }
+                        break; // 총알 하나당 한 마리만 관통 없이 타격
+                    }
+                }
+                if (hit) {
+                    bullets.splice(bIndex, 1); // 맞춘 총알 삭제
+                }
+            }
+
+            // 적군 전멸 시 다음 웨이브
+            if (enemies.length === 0 && gameState === 'PLAYING') {
+                level++; // 다음 스테이지로 레벨 업!
+                initEnemies();
+            }
+
+            let pRect = { x: player.x - player.width/2, y: player.y - player.height/2, width: player.width, height: player.height };
+            
+            // 충돌 처리: 적군 총알 -> 플레이어
+            enemyBullets.forEach((eb, ebIndex) => {
+                if (!player.isCaught && isColliding(eb, pRect)) { // 잡혀있을 땐 총알에 안 맞음
+                    enemyBullets.splice(ebIndex, 1);
+                    lives--;
+                    uiLives.innerText = lives;
+                    if (lives <= 0) {
+                        player.isDead = true;
+                        spawnParticles(player.x, player.y, '#0ff', 40); // 우주선 대폭발
+                        spawnParticles(player.x, player.y, '#fff', 20); // 번쩍이는 하얀 파편
+                        SoundFX.playGameOver(); // 사망 시 긴 폭발음 재생
+                        gameOver();
+                    } else {
+                        spawnParticles(player.x, player.y, '#f00', 10); // 피격 시 빨간 파편 살짝 튐
+                        SoundFX.playDamage(); // 일반 피격 전용 사운드 (둔탁한 소리)
+                    }
+                }
+            });
+
+            // 적군을 밑으로 놓쳤거나, 플레이어 우주선과 직접 충돌했을 경우의 처리
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                let enemy = enemies[i];
+                let eRect = { x: enemy.x - enemy.width/2, y: enemy.y - enemy.height/2, width: enemy.width, height: enemy.height };
+                
+                if ((!player.isCaught && isColliding(eRect, pRect)) || enemy.y > canvas.height + 15) {
+                    enemies.splice(i, 1); // 놓친 적군 삭제 (그래야 다음 웨이브로 넘어감)
+                    lives--;
+                    uiLives.innerText = lives;
+                    if (lives <= 0) {
+                        player.isDead = true;
+                        spawnParticles(player.x, player.y, '#0ff', 40);
+                        spawnParticles(player.x, player.y, '#fff', 20);
+                        SoundFX.playGameOver(); // 사망 시 긴 폭발음 재생
+                        gameOver();
+                    } else {
+                        spawnParticles(player.x, player.y, '#f00', 10);
+                        SoundFX.playDamage();
+                    }
+                }
+            }
+        }
+
+        function draw() {
+            // 배경 초기화
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 별 그리기
+            ctx.fillStyle = '#fff';
+            stars.forEach(star => {
+                ctx.beginPath(); ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2); ctx.fill();
+            });
+
+            // 게임 시작 전에만 안 그리고, 게임 오버 시에는 화면을 그대로 유지(정지 화면)
+            if (gameState === 'START') return; 
+
+            // 플레이어 그리기 (죽지 않았을 때만 그림)
+            if (!player.isDead) {
+                ctx.save();
+                ctx.translate(player.x, player.y);
+                if (player.isCaught) ctx.rotate(player.angle); // 잡혔을 때 빙글빙글
+                
+                // 엔진 불꽃 (랜덤하게 길이가 변하며 깜빡임)
+                ctx.fillStyle = (Math.random() > 0.5) ? '#f00' : '#ff0';
+                ctx.beginPath();
+                ctx.moveTo(-5, player.height/2);
+                ctx.lineTo(5, player.height/2);
+                ctx.lineTo(0, player.height/2 + 10 + Math.random()*5);
+                ctx.fill();
+
+                // 좌우 날개
+                ctx.fillStyle = '#aaa';
+                ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-player.width/2, player.height/2); ctx.lineTo(-player.width/2 + 5, player.height/2 + 5); ctx.lineTo(0, player.height/2 - 5); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(player.width/2, player.height/2); ctx.lineTo(player.width/2 - 5, player.height/2 + 5); ctx.lineTo(0, player.height/2 - 5); ctx.fill();
+
+                // 우주선 본체
+                ctx.fillStyle = player.color;
+                ctx.beginPath();
+                ctx.moveTo(0, -player.height/2); // 코끝
+                ctx.lineTo(-8, player.height/2);
+                ctx.lineTo(8, player.height/2);
+                ctx.fill();
+
+                // 조종석 (캐노피)
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.ellipse(0, -player.height/4 + 2, 3, 6, 0, 0, Math.PI*2);
+                ctx.fill();
+                
+                ctx.restore();
+            }
+
+            // 파티클 그리기
+            particles.forEach(p => {
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x, p.y, p.size, p.size);
+            });
+            ctx.globalAlpha = 1.0;
+
+            // 총알 그리기
+            ctx.fillStyle = '#0f0';
+            bullets.forEach(b => ctx.fillRect(b.x, b.y, b.width, b.height));
+            
+            ctx.fillStyle = '#f00';
+            enemyBullets.forEach(eb => ctx.fillRect(eb.x, eb.y, eb.width, eb.height));
+
+            // 보스 갤러그 납치 광선(Tractor Beam) 그리기
+            enemies.forEach(enemy => {
+                if (enemy.state === 'beaming') {
+                    ctx.save();
+                    ctx.globalAlpha = Math.abs(Math.sin(performance.now() * 0.01)) * 0.4 + 0.1; // 번쩍이는 효과
+                    ctx.fillStyle = '#0ff';
+                    ctx.beginPath();
+                    ctx.moveTo(enemy.x, enemy.y + 10);
+                    ctx.lineTo(enemy.x - 75, canvas.height);
+                    ctx.lineTo(enemy.x + 75, canvas.height);
+                    ctx.fill();
+                    ctx.restore();
+                }
+            });
+
+            // 적군 그리기
+            enemies.forEach(enemy => {
+                ctx.save();
+                ctx.translate(enemy.x, enemy.y);
+                
+                let time = performance.now() * 0.005;
+                let flap = Math.sin(time + enemy.x * 0.1) * 3; // 날갯짓, 다리 움직임 애니메이션
+                
+                if (enemy.type === 2) {
+                    // Type 2: 보스 갤러그 (Commander) - 튼튼해 보이는 초록색 디자인
+                    ctx.fillStyle = '#0f0';
+                    ctx.beginPath();
+                    ctx.moveTo(0, -8); ctx.lineTo(-15, 5 + flap); ctx.lineTo(-10, 15); ctx.lineTo(0, 10); ctx.lineTo(10, 15); ctx.lineTo(15, 5 + flap); ctx.fill();
+                    
+                    ctx.fillStyle = '#0ff'; // 양쪽 빛나는 파란 캐노피
+                    ctx.beginPath(); ctx.ellipse(-6, 2, 3, 5, 0, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.ellipse(6, 2, 3, 5, 0, 0, Math.PI*2); ctx.fill();
+                    
+                    ctx.fillStyle = '#f00'; // 중앙 빨간 코어
+                    ctx.beginPath(); ctx.arc(0, -2, 3, 0, Math.PI*2); ctx.fill();
+                } else if (enemy.type % 2 === 0) {
+                    // Type 0: 노란색 게(Crab) 모양 외계인
+                    ctx.strokeStyle = '#ff0'; ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-12, -8 + flap); ctx.lineTo(-10, -12 + flap); ctx.stroke(); // 왼쪽 다리
+                    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(12, -8 + flap); ctx.lineTo(10, -12 + flap); ctx.stroke();  // 오른쪽 다리
+                    
+                    ctx.fillStyle = '#ff0';
+                    ctx.beginPath(); ctx.ellipse(0, 0, 8, 6, 0, 0, Math.PI*2); ctx.fill(); // 몸통
+                    
+                    ctx.fillStyle = '#f00'; // 무서운 빨간 눈
+                    ctx.beginPath(); ctx.arc(-4, -2, 2, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(4, -2, 2, 0, Math.PI*2); ctx.fill();
+                } else {
+                    // Type 1: 보라색 나방(Moth) 모양 외계인
+                    ctx.fillStyle = '#f0f';
+                    ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(-12, -6 + flap); ctx.lineTo(-10, 6 + flap); ctx.fill(); // 왼쪽 날개
+                    ctx.beginPath(); ctx.moveTo(4, 0); ctx.lineTo(12, -6 + flap); ctx.lineTo(10, 6 + flap); ctx.fill();    // 오른쪽 날개
+                    
+                    ctx.beginPath(); ctx.ellipse(0, 0, 5, 8, 0, 0, Math.PI*2); ctx.fill(); // 몸통
+                    
+                    ctx.fillStyle = '#0ff'; // 차가운 청록색 눈
+                    ctx.beginPath(); ctx.arc(-2, -4, 1.5, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(2, -4, 1.5, 0, Math.PI*2); ctx.fill();
+                }
+                
+                ctx.restore();
+            });
+        }
+
+        function gameOver() {
+            gameState = 'GAME_OVER';
+            modalTitle.innerText = "GAME OVER";
+            modalTitle.style.color = "#f00";
+            modal.style.display = 'block';
+            startBtn.innerText = "RETRY";
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            // 게임 오버 상태여도 별과 파티클이 계속 움직이게 루프 유지
+            if (gameState === 'PLAYING' || gameState === 'GAME_OVER') {
+                animationId = requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // 최초 화면 렌더링
+        draw();
+
+    </script>
+</body>
+</html>
