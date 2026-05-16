@@ -327,7 +327,7 @@
             modal.style.display = 'none';
             
             if (animationId) cancelAnimationFrame(animationId);
-            gameLoop();
+            gameLoop(performance.now()); // 최초 실행 시 현재 시간을 넘겨줌
         }
 
         startBtn.addEventListener('click', startGame);
@@ -698,6 +698,7 @@
 
         let lastTime = 0;
         function gameLoop(timestamp) {
+            if (!timestamp) timestamp = performance.now(); // 만약 비어있을 경우 에러(NaN) 방지
             // 주사율 독립적(120Hz, 144Hz 방어) 업데이트 계산 로직
             if (!lastTime) lastTime = timestamp;
             let dt = (timestamp - lastTime) / 16.666; // 60FPS 기준 비율 (1.0)
