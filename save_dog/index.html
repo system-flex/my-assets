@@ -235,6 +235,8 @@
         let lastShieldHitTime = 0;
         let gameOverTimer = null;
 
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
         // --- DOM 요소 ---
         const uiTimer = document.getElementById('timer');
         const uiInkContainer = document.getElementById('ink-container');
@@ -491,7 +493,8 @@
                 }
             }
 
-            if (dist > 5) { // 부드럽고 촘촘하게 잉크 차감
+            let drawThreshold = isMobile ? 15 : 5; // 모바일에서는 드래그 감도를 둔하게 하여 정교하게 그릴 수 있게 함
+            if (dist > drawThreshold) { // 부드럽고 촘촘하게 잉크 차감
                 if (currentInk < dist) {
                     finishDrawing(); // 잉크 바닥 -> 즉시 강제 종료 및 게임 시작
                     return;
@@ -586,11 +589,11 @@
                     let norm = Vector.normalise(dir);
                     
                     // 강아지를 향한 무조건 돌진 힘 (하늘에서 떨어지지 않고 직접 날아감)
-                    let forceMag = 0.0008 + (currentLevel * 0.0003); 
+                    let forceMag = (0.0008 + (currentLevel * 0.0003)) * (isMobile ? 0.5 : 1.0); 
                     Body.applyForce(bee, bee.position, Vector.mult(norm, forceMag));
 
                     // 레벨별 최대 속도 리밋 해제
-                    let maxSpeed = 15 + currentLevel * 2;
+                    let maxSpeed = (15 + currentLevel * 2) * (isMobile ? 0.5 : 1.0);
                     let speed = Vector.magnitude(bee.velocity);
                     
                     if (speed > maxSpeed) {
@@ -600,8 +603,8 @@
                     // 지그재그 비행 및 공격적인 틈새 파고들기 모션
                     if (dist < 400) {
                         let wiggle = { 
-                            x: (Math.random() - 0.5) * 0.004 * currentLevel, 
-                            y: (Math.random() - 0.5) * 0.004 * currentLevel 
+                            x: (Math.random() - 0.5) * 0.004 * currentLevel * (isMobile ? 0.5 : 1.0), 
+                            y: (Math.random() - 0.5) * 0.004 * currentLevel * (isMobile ? 0.5 : 1.0) 
                         };
                         Body.applyForce(bee, bee.position, wiggle);
                     }
