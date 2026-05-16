@@ -178,6 +178,9 @@
         let level = 1; // 스테이지 난이도 조절용 변수
         let animationId;
 
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const speedMultiplier = isMobile ? 0.6 : 1.0; // 모바일 속도 조절 배율
+
         // 우주 배경 (별)
         let stars = [];
         for (let i = 0; i < 100; i++) {
@@ -236,14 +239,18 @@
 
         // 이벤트 리스너 (모바일 터치)
         let isTouching = false;
+        let lastTouchX = 0;
         canvas.addEventListener('touchstart', (e) => {
             if (gameState !== 'PLAYING') return;
             isTouching = true;
-            player.x = e.touches[0].clientX - canvas.getBoundingClientRect().left;
+            lastTouchX = e.touches[0].clientX;
         });
         canvas.addEventListener('touchmove', (e) => {
             if (!isTouching || gameState !== 'PLAYING') return;
-            player.x = e.touches[0].clientX - canvas.getBoundingClientRect().left;
+            let currentX = e.touches[0].clientX;
+            let deltaX = currentX - lastTouchX;
+            player.x += deltaX * 0.8; // 모바일 터치 감도를 살짝 낮춰 부드럽게 이동
+            lastTouchX = currentX;
         });
         canvas.addEventListener('touchend', () => { isTouching = false; });
 
@@ -267,7 +274,7 @@
             enemies = [];
             enemyDirection = 1;
             // 레벨에 따라 서서히 속도 증가 (1레벨: 0.5, 2레벨: 0.8, 3레벨: 1.1 ...)
-            enemySpeed = 0.5 + ((level - 1) * 0.3);
+            enemySpeed = (0.5 + ((level - 1) * 0.3)) * speedMultiplier;
             const rows = 4;
             const cols = 6;
             const padding = 40;
@@ -391,7 +398,7 @@
                 // 총알 발사
                 if (player.cooldown > 0) player.cooldown--;
                 if ((keys.Space || isTouching) && player.cooldown === 0 && !player.isDead) {
-                    bullets.push({ x: player.x - 2, y: player.y - 15, width: 4, height: 10, speed: 10 });
+                    bullets.push({ x: player.x - 2, y: player.y - 15, width: 4, height: 10, speed: 10 * speedMultiplier });
                     SoundFX.playShoot();
                     player.cooldown = 15;
                 }
@@ -462,7 +469,7 @@
             let fireChance = 0.002 + (level * 0.0005);
             enemies.forEach(enemy => {
                 if ((enemy.state === 'grid' || enemy.state === 'diving') && Math.random() < fireChance) {
-                    enemyBullets.push({ x: enemy.x - 2, y: enemy.y + 10, width: 4, height: 10, speed: 4 + level * 0.5 });
+                    enemyBullets.push({ x: enemy.x - 2, y: enemy.y + 10, width: 4, height: 10, speed: (4 + level * 0.5) * speedMultiplier });
                 }
             });
 
