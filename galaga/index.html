@@ -178,8 +178,9 @@
         let level = 1; // 스테이지 난이도 조절용 변수
         let animationId;
 
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        const speedMultiplier = isMobile ? 0.6 : 1.0; // 모바일 속도 조절 배율
+        // 훨씬 더 강력하고 확실한 모바일/터치 기기 감지 로직
+        const isMobile = /Mobi|Android/i.test(navigator.userAgent) || ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+        const speedMultiplier = isMobile ? 0.8 : 1.0; 
 
         // 우주 배경 (별)
         let stars = [];
@@ -240,7 +241,7 @@
         // 이벤트 리스너 (모바일 터치)
         let isTouching = false;
         let lastTouchX = 0;
-        canvas.addEventListener('touchstart', (e) => {
+        canvas.addEventListener('touchstart', (e) => { // touch-action: none과 조합되어 기본 스크롤 방지
             if (gameState !== 'PLAYING') return;
             isTouching = true;
             lastTouchX = e.touches[0].clientX;
@@ -249,7 +250,7 @@
             if (!isTouching || gameState !== 'PLAYING') return;
             let currentX = e.touches[0].clientX;
             let deltaX = currentX - lastTouchX;
-            player.x += deltaX * 0.8; // 모바일 터치 감도를 살짝 낮춰 부드럽게 이동
+            player.x += deltaX * 1.2; // 감도를 올려 내 손가락을 정확히 따라오도록 수정
             lastTouchX = currentX;
         });
         canvas.addEventListener('touchend', () => { isTouching = false; });
@@ -274,7 +275,7 @@
             enemies = [];
             enemyDirection = 1;
             // 레벨에 따라 서서히 속도 증가 (1레벨: 0.5, 2레벨: 0.8, 3레벨: 1.1 ...)
-            enemySpeed = (0.5 + ((level - 1) * 0.3)) * speedMultiplier;
+            enemySpeed = (0.5 + ((level - 1) * 0.25)) * speedMultiplier;
             const rows = 4;
             const cols = 6;
             const padding = 40;
@@ -339,17 +340,17 @@
                    rect1.y + rect1.height > rect2.y;
         }
 
-        function update() {
+        function update(dt = 1) { // dt(Delta Time) 파라미터 추가! 주사율(프레임) 상관없이 균일한 속도 보장
             // 배경 별 이동 (게임 오버 상태에서도 계속 이동하도록 위로 올림)
             stars.forEach(star => {
-                star.y += star.speed;
+                star.y += star.speed * dt;
                 if (star.y > canvas.height) { star.y = 0; star.x = Math.random() * canvas.width; }
             });
 
             // 파티클 업데이트 (게임 오버 상태에서도 파편이 튀도록 함)
             particles.forEach(p => {
-                p.x += p.vx; p.y += p.vy;
-                p.life -= p.decay;
+                p.x += p.vx * dt; p.y += p.vy * dt;
+                p.life -= p.decay * dt;
             });
             particles = particles.filter(p => p.life > 0);
 
@@ -357,12 +358,12 @@
 
             if (player.isCaught) {
                 // 광선에 잡혀서 끌려 올라가는 로직
-                player.angle += 0.2; // 빙글빙글 회전
+                player.angle += 0.2 * dt; 
                 let targetBoss = player.caughtBy;
                 let dx = targetBoss.x - player.x;
                 let dy = targetBoss.y - player.y;
-                player.x += dx * 0.03;
-                player.y += dy * 0.03;
+                player.x += dx * 0.03 * dt;
+                player.y += dy * 0.03 * dt;
 
                 // 보스에게 완전히 닿으면 라이프 깎이고 폭발
                 if (Math.sqrt(dx*dx + dy*dy) < 20) {
@@ -386,17 +387,18 @@
                 }
             } else {
                 // 평소 플레이어 이동
-                if (keys.ArrowLeft) player.x -= player.speed;
-                if (keys.ArrowRight) player.x += player.speed;
+                if (keys.ArrowLeft) player.x -= player.speed * dt;
+                if (keys.ArrowRight) player.x += player.speed * dt;
                 
                 if (player.x < player.width/2) player.x = player.width/2;
                 if (player.x > canvas.width - player.width/2) player.x = canvas.width - player.width/2;
 
                 // 광선 풀린 후 부드럽게 원위치로 떨어짐
-                if (player.y < canvas.height - 50) player.y += 4; 
+                if (player.y < canvas.height - 50) player.y += 4 * dt; 
 
                 // 총알 발사
-                if (player.cooldown > 0) player.cooldown--;
+                if (player.cooldown > 0) player.cooldown -= 1 * dt;
+                if (player.cooldown <= 0) player.cooldown = 0;
                 if ((keys.Space || isTouching) && player.cooldown === 0 && !player.isDead) {
                     bullets.push({ x: player.x - 2, y: player.y - 15, width: 4, height: 10, speed: 10 * speedMultiplier });
                     SoundFX.playShoot();
@@ -405,17 +407,17 @@
             }
 
             // 총알 이동 및 화면 밖 제거
-            bullets.forEach(b => b.y -= b.speed);
+            bullets.forEach(b => b.y -= b.speed * dt);
             bullets = bullets.filter(b => b.y > 0);
 
-            enemyBullets.forEach(eb => eb.y += eb.speed);
+            enemyBullets.forEach(eb => eb.y += eb.speed * dt);
             enemyBullets = enemyBullets.filter(eb => eb.y < canvas.height);
 
             // 적군 전체 이동 로직
             let hitWall = false;
             enemies.forEach(enemy => {
                 if (enemy.state === 'grid') {
-                    enemy.x += enemySpeed * enemyDirection;
+                    enemy.x += enemySpeed * enemyDirection * dt;
                     if (enemy.x > canvas.width - 20 || enemy.x < 20) hitWall = true;
                     
                     // 보스가 대열에 있다가 확률적으로 하강 시작!
@@ -432,12 +434,12 @@
                         enemy.state = 'beaming';
                         enemy.timer = 120; // 약 2초간 빔 발사
                     } else {
-                        enemy.x += (dx/dist) * 3;
-                        enemy.y += (dy/dist) * 3;
+                        enemy.x += (dx/dist) * 3 * dt;
+                        enemy.y += (dy/dist) * 3 * dt;
                     }
                 } else if (enemy.state === 'beaming') {
-                    enemy.timer--;
-                    if (enemy.timer % 30 === 0) SoundFX.playBeam(); // 광선 소리 반복
+                    enemy.timer -= 1 * dt;
+                    if (Math.floor(enemy.timer) % 30 === 0) SoundFX.playBeam(); // 광선 소리 반복
                     
                     // 빔 영역 충돌 검사 (삼각형 모양)
                     if (!player.isDead && !player.isCaught && player.y > enemy.y) {
@@ -451,7 +453,7 @@
                     
                     if (enemy.timer <= 0) enemy.state = 'returning'; // 시간 지나면 복귀
                 } else if (enemy.state === 'returning') {
-                    enemy.y -= 2; // 위로 도망감
+                    enemy.y -= 2 * dt; // 위로 도망감
                     if (enemy.y < -50) {
                         enemy.y = 50; // 다시 화면 위에서 나타나 대열 합류
                         enemy.state = 'grid';
@@ -466,7 +468,7 @@
             }
 
             // 적군 무작위 발사
-            let fireChance = 0.002 + (level * 0.0005);
+            let fireChance = (0.0015 + (level * 0.0005)) * dt; // dt를 곱해 프레임 수 독립적 확률
             enemies.forEach(enemy => {
                 if ((enemy.state === 'grid' || enemy.state === 'diving') && Math.random() < fireChance) {
                     enemyBullets.push({ x: enemy.x - 2, y: enemy.y + 10, width: 4, height: 10, speed: (4 + level * 0.5) * speedMultiplier });
@@ -694,9 +696,19 @@
             startBtn.innerText = "RETRY";
         }
 
-        function gameLoop() {
-            update();
+        let lastTime = 0;
+        function gameLoop(timestamp) {
+            // 주사율 독립적(120Hz, 144Hz 방어) 업데이트 계산 로직
+            if (!lastTime) lastTime = timestamp;
+            let dt = (timestamp - lastTime) / 16.666; // 60FPS 기준 비율 (1.0)
+            lastTime = timestamp;
+            
+            // 다른 탭에 다녀왔을 때 게임이 한꺼번에 미친 듯이 진행되는 것 방지
+            if (dt > 3) dt = 1; 
+            
+            update(dt);
             draw();
+            
             // 게임 오버 상태여도 별과 파티클이 계속 움직이게 루프 유지
             if (gameState === 'PLAYING' || gameState === 'GAME_OVER') {
                 animationId = requestAnimationFrame(gameLoop);
