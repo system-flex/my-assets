@@ -592,31 +592,36 @@
                     let maxSpeed = (8 + currentLevel * 1.5) * (isMobile ? 0.7 : 1.0); // 보이지 않게 폭주하는 것 방지
                     let speed = Vector.magnitude(bee.velocity);
                     
-                    // [핵심] 장애물 우회 (Stuck) AI 3.0
-                    if (dist > 100 && speed < 3.0) {
+                    // [핵심] 장애물 우회 (Stuck) AI 4.0 - 지형 맞춤형 악랄한 돌파
+                    if (dist > 80 && speed < 5.0) { // 막힘 판정 기준을 더 예민하게(빠르게) 변경
                         bee.stuckTimer++;
                     } else {
-                        bee.stuckTimer = Math.max(0, bee.stuckTimer - 2); // 빨리 풀리도록 조정
+                        bee.stuckTimer = Math.max(0, bee.stuckTimer - 1);
                     }
 
-                    // 막힌 상태: 강아지를 향한 맹목적 직진을 멈추고 우회/회피에 전념!
-                    if (bee.stuckTimer > 20) {
-                        let time = performance.now() * 0.005;
-                        // 회피 중에는 모바일 속도 페널티를 해제하여 힘을 강하게 줌
-                        let sweepX = Math.cos(time + bee.id) * 0.015;
-                        let sweepY = Math.sin(time + bee.id) * 0.015;
+                    // 10프레임(약 0.15초) 이상 막히면 즉시 강제 회피 기동!
+                    if (bee.stuckTimer > 10) {
+                        let time = performance.now() * 0.01;
+                        let sweepX = Math.cos(time + bee.id) * 0.02 + (Math.random() - 0.5) * 0.03;
+                        let sweepY = Math.sin(time + bee.id) * 0.02 + (Math.random() - 0.5) * 0.03;
                         
-                        if (bee.position.y > height / 2) {
-                            sweepY -= 0.030; // 레벨8: 거대 벽을 넘기 위해 크게 점프
+                        if (currentLevel === 3) {
+                            // 레벨3: L자 천장 위에서 낑기므로 무조건 왼쪽으로 빼서 아래로 파고들게 함
+                            sweepX -= 0.04;
+                            sweepY += 0.02;
+                        } else if (currentLevel === 8) {
+                            // 레벨8: 거대 가시벽을 넘어야 하므로 무조건 위로 강력하게 치솟게 함
+                            sweepY -= 0.06;
                         } else {
-                            sweepY += 0.025; // 레벨3: 천장을 피하기 위해 아래로 파고듦
+                            // 기본 회피: 약간 위로 솟구치며 흩어짐
+                            sweepY -= 0.02;
                         }
 
                         Body.applyForce(bee, bee.position, { x: sweepX, y: sweepY });
                         
-                        // 회피 시에는 속도 제한 한도를 1.5배로 늘려 벽을 쉽게 넘게 함
-                        if (speed > maxSpeed * 1.5) {
-                            Body.setVelocity(bee, Vector.mult(Vector.normalise(bee.velocity), maxSpeed * 1.5));
+                        // 갇혔을 때는 폭주를 허용하여 벽을 비비고 넘어오게 함
+                        if (speed > maxSpeed * 2.5) {
+                            Body.setVelocity(bee, Vector.mult(Vector.normalise(bee.velocity), maxSpeed * 2.5));
                         }
                     } else {
                         // 평상시: 강아지를 향해 돌진
