@@ -589,50 +589,52 @@
                 
                 if (dist > 0) {
                     let norm = Vector.normalise(dir);
-                    
-                    // 강아지를 향한 무조건 돌진 힘 (하늘에서 떨어지지 않고 직접 날아감)
-                    let forceMag = (0.0005 + (currentLevel * 0.0001)) * (isMobile ? 0.7 : 1.0); // 힘 상한선 대폭 낮춤
-                    Body.applyForce(bee, bee.position, Vector.mult(norm, forceMag));
-
-                    // 레벨별 최대 속도 리밋 해제
                     let maxSpeed = (8 + currentLevel * 1.5) * (isMobile ? 0.7 : 1.0); // 보이지 않게 폭주하는 것 방지
                     let speed = Vector.magnitude(bee.velocity);
                     
-                    if (speed > maxSpeed) {
-                        Body.setVelocity(bee, Vector.mult(Vector.normalise(bee.velocity), maxSpeed));
-                    }
-
-                    // [핵심] 장애물 우회 (Stuck) AI 2.0
-                    // 강아지와 거리가 먼데 속도가 느리거나 비비적거린다 = 장애물에 막힘
+                    // [핵심] 장애물 우회 (Stuck) AI 3.0
                     if (dist > 100 && speed < 3.0) {
                         bee.stuckTimer++;
                     } else {
-                        bee.stuckTimer = Math.max(0, bee.stuckTimer - 1); // 일시적으로 풀린 척하는 현상 방지
+                        bee.stuckTimer = Math.max(0, bee.stuckTimer - 2); // 빨리 풀리도록 조정
                     }
 
-                    // 일정 시간 막혀있으면 회피를 위한 강력한 소용돌이 기동(Sweep) 시작
+                    // 막힌 상태: 강아지를 향한 맹목적 직진을 멈추고 우회/회피에 전념!
                     if (bee.stuckTimer > 20) {
                         let time = performance.now() * 0.005;
-                        let sweepX = Math.cos(time + bee.id) * 0.008 * (isMobile ? 0.7 : 1.0);
-                        let sweepY = Math.sin(time + bee.id) * 0.008 * (isMobile ? 0.7 : 1.0);
+                        // 회피 중에는 모바일 속도 페널티를 해제하여 힘을 강하게 줌
+                        let sweepX = Math.cos(time + bee.id) * 0.015;
+                        let sweepY = Math.sin(time + bee.id) * 0.015;
                         
-                        // 레벨 구조에 따른 보정: 화면 하단(레벨8 등)에선 위로 강하게 점프, 상단(레벨3 천장)에선 아래로 파고듦
                         if (bee.position.y > height / 2) {
-                            sweepY -= 0.015; 
+                            sweepY -= 0.030; // 레벨8: 거대 벽을 넘기 위해 크게 점프
                         } else {
-                            sweepY += 0.010; 
+                            sweepY += 0.025; // 레벨3: 천장을 피하기 위해 아래로 파고듦
                         }
 
                         Body.applyForce(bee, bee.position, { x: sweepX, y: sweepY });
-                    }
+                        
+                        // 회피 시에는 속도 제한 한도를 1.5배로 늘려 벽을 쉽게 넘게 함
+                        if (speed > maxSpeed * 1.5) {
+                            Body.setVelocity(bee, Vector.mult(Vector.normalise(bee.velocity), maxSpeed * 1.5));
+                        }
+                    } else {
+                        // 평상시: 강아지를 향해 돌진
+                        let forceMag = (0.0005 + (currentLevel * 0.0001)) * (isMobile ? 0.7 : 1.0); 
+                        Body.applyForce(bee, bee.position, Vector.mult(norm, forceMag));
 
-                    // 지그재그 비행 (강도 낮춤)
-                    if (dist < 400) {
-                        let wiggle = { 
-                            x: (Math.random() - 0.5) * 0.002 * currentLevel * (isMobile ? 0.5 : 1.0), 
-                            y: (Math.random() - 0.5) * 0.002 * currentLevel * (isMobile ? 0.5 : 1.0) 
-                        };
-                        Body.applyForce(bee, bee.position, wiggle);
+                        if (speed > maxSpeed) {
+                            Body.setVelocity(bee, Vector.mult(Vector.normalise(bee.velocity), maxSpeed));
+                        }
+
+                        // 지그재그 비행 (강도 낮춤)
+                        if (dist < 400) {
+                            let wiggle = { 
+                                x: (Math.random() - 0.5) * 0.002 * currentLevel * (isMobile ? 0.5 : 1.0), 
+                                y: (Math.random() - 0.5) * 0.002 * currentLevel * (isMobile ? 0.5 : 1.0) 
+                            };
+                            Body.applyForce(bee, bee.position, wiggle);
+                        }
                     }
                 }
             });
