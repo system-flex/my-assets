@@ -623,10 +623,29 @@
                         }
                     }
 
-                    // 낑낑대며 고생한 시간이 일정 이상 지나면, 개체별로 랜덤하게 깨달음을 얻고 우회 시작!
-                    if (bee.stuckTimer > 40 + (bee.id % 60)) {
+                    // [새로운 AI 6.0: 군중 심리와 개척자]
+                    // 1. 개척자(Scout) 탄생: 3~5초 이상 극심하게 막힌 극소수의 벌만 스스로 깨달음을 얻음
+                    if (bee.stuckTimer > 180 + Math.random() * 120) {
                         bee.isSmart = true;
                         bee.stuckTimer = 0;
+                    }
+
+                    // 2. 군중 심리 (Herd Mentality): 내 주변에 길을 찾은 똑똑한 벌이 지나가면 "따라가자!" 하고 전염됨
+                    if (!bee.isSmart && bee.stuckTimer > 30) {
+                        for (let j = 0; j < bees.length; j++) {
+                            let otherBee = bees[j];
+                            if (otherBee.isSmart) {
+                                let distToSmart = Vector.magnitude(Vector.sub(bee.position, otherBee.position));
+                                if (distToSmart < 70) {
+                                    // 한꺼번에 확 풀리지 않고, 둑이 무너지듯 한두 마리씩 줄지어 따라가도록 확률 적용
+                                    if (Math.random() < 0.03) {
+                                        bee.isSmart = true;
+                                        bee.stuckTimer = 0;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     if (bee.stuckTimer <= 15 || bee.isSmart) {
