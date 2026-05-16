@@ -570,7 +570,8 @@
                     frictionAir: 0.01, // 미친 속도로 돌진
                     restitution: 0.1,  // 튕기지 않고 들러붙어 밈
                     density: 0.005,
-                    stuckTimer: 0 // 벌이 지형에 막혀있는 시간을 재기 위한 변수
+                    stuckTimer: 0, // 벌이 지형에 막혀있는 시간을 재기 위한 변수
+                    isSmart: false // 처음엔 멍청하지만, 막히면 똑똑해짐
                 });
                 bees.push(bee);
                 Composite.add(world, bee);
@@ -584,18 +585,24 @@
                 // 벌이 공중에 떠서 날아다니는 것처럼 보이게 중력을 완전히 상쇄
                 Body.applyForce(bee, bee.position, { x: 0, y: -engine.world.gravity.y * engine.world.gravity.scale * bee.mass });
 
-                // [완벽한 길찾기 내비게이션 AI 도입] 무식하게 직진하지 않고 특정 지형에서는 중간 목표(Waypoint)를 경유
                 let targetPos = { x: dog.position.x, y: dog.position.y };
 
-                if (currentLevel === 3) {
-                    // 레벨 3: 천장에 머리를 박지 않도록 우선 바닥(아래)으로 내려온 뒤 우측 강아지에게 향함
-                    if (bee.position.x < width / 2 + 50 && bee.position.y < height - 150) {
-                        targetPos = { x: width / 4, y: height - 40 }; 
-                    }
-                } else if (currentLevel === 8) {
-                    // 레벨 8: 거대 가시벽을 피하기 위해 화면 윗부분(벽 왼쪽 너머)을 먼저 찍고 내려감
-                    if (bee.position.x > width / 2 - 30) {
-                        targetPos = { x: width / 2 - 30, y: 30 }; 
+                // 똑똑해진 벌(isSmart = true)만 우회 경로를 탐색함
+                if (bee.isSmart) {
+                    if (currentLevel === 3) {
+                        // 레벨 3: 천장에 머리를 박지 않도록 우선 바닥(아래)으로 내려옴
+                        if (bee.position.x < width / 2 + 50 && bee.position.y < height - 150) {
+                            targetPos = { x: width / 4, y: height - 40 }; 
+                        } else {
+                            bee.isSmart = false; // 위험 구간을 빠져나오면 다시 멍청하게 직진!
+                        }
+                    } else if (currentLevel === 8) {
+                        // 레벨 8: 거대 가시벽을 피하기 위해 화면 윗부분을 먼저 찍음
+                        if (bee.position.x > width / 2 - 30) {
+                            targetPos = { x: width / 2 - 30, y: 30 }; 
+                        } else {
+                            bee.isSmart = false; // 벽을 넘으면 다시 멍청하게 직진!
+                        }
                     }
                 }
 
@@ -607,20 +614,22 @@
                     let maxSpeed = (8 + currentLevel * 1.5) * (isMobile ? 0.7 : 1.0); // 보이지 않게 폭주하는 것 방지
                     let speed = Vector.magnitude(bee.velocity);
                     
-                    // 방어벽에 들러붙었을 때 파고들기 위한 드릴 AI (stuckTimer)
-                    if (dist > 50 && speed < 2.0) { 
-                        bee.stuckTimer++;
-                    } else {
-                        bee.stuckTimer = 0; // 어설픈 튕김을 막기 위해 확실하게 초기화
+                    // 똑똑해지기 전(무식하게 돌진 중)일 때만 막힘 판정
+                    if (!bee.isSmart) {
+                        if (dist > 50 && speed < 2.0) { 
+                            bee.stuckTimer++;
+                        } else {
+                            bee.stuckTimer = 0; 
+                        }
                     }
 
-                    if (bee.stuckTimer > 15) {
-                        // 방어벽 틈새를 미친듯이 비집고 들어가는 회피/드릴 기동
-                        let time = performance.now() * 0.01;
-                        let drillX = Math.cos(time + bee.id) * 0.02 + (Math.random() - 0.5) * 0.02;
-                        let drillY = Math.sin(time + bee.id) * 0.02 + (Math.random() - 0.5) * 0.02;
-                        Body.applyForce(bee, bee.position, { x: drillX, y: drillY });
-                    } else {
+                    // 낑낑대며 고생한 시간이 일정 이상 지나면, 개체별로 랜덤하게 깨달음을 얻고 우회 시작!
+                    if (bee.stuckTimer > 40 + (bee.id % 60)) {
+                        bee.isSmart = true;
+                        bee.stuckTimer = 0;
+                    }
+
+                    if (bee.stuckTimer <= 15 || bee.isSmart) {
                         // 평상시: 강아지를 향해 돌진
                         let forceMag = (0.0005 + (currentLevel * 0.0001)) * (isMobile ? 0.7 : 1.0); 
                         Body.applyForce(bee, bee.position, Vector.mult(norm, forceMag));
@@ -629,14 +638,20 @@
                             Body.setVelocity(bee, Vector.mult(Vector.normalise(bee.velocity), maxSpeed));
                         }
 
-                        // 지그재그 비행 (강도 낮춤)
-                        if (dist < 400) {
+                        // 우회 중이 아닐 때만 약간의 지그재그 비행 (우회할 땐 신속하게)
+                        if (dist < 400 && !bee.isSmart) {
                             let wiggle = { 
                                 x: (Math.random() - 0.5) * 0.002 * currentLevel * (isMobile ? 0.5 : 1.0), 
                                 y: (Math.random() - 0.5) * 0.002 * currentLevel * (isMobile ? 0.5 : 1.0) 
                             };
                             Body.applyForce(bee, bee.position, wiggle);
                         }
+                    } else {
+                        // 방어벽 틈새를 미친듯이 비집고 들어가는 드릴 모션 (아직 깨닫지 못하고 낑낑대는 상태)
+                        let time = performance.now() * 0.01;
+                        let drillX = Math.cos(time + bee.id) * 0.02 + (Math.random() - 0.5) * 0.02;
+                        let drillY = Math.sin(time + bee.id) * 0.02 + (Math.random() - 0.5) * 0.02;
+                        Body.applyForce(bee, bee.position, { x: drillX, y: drillY });
                     }
                 }
             });
