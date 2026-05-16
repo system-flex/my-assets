@@ -375,10 +375,12 @@
                         player.isDead = true;
                         spawnParticles(player.x, player.y, '#0ff', 40);
                         SoundFX.playGameOver();
+                        if (navigator.vibrate) navigator.vibrate([400, 100, 400]); // 사망 시 긴 진동 패턴
                         gameOver();
                     } else {
                         spawnParticles(player.x, player.y, '#f00', 20);
                         SoundFX.playDamage();
+                        if (navigator.vibrate) navigator.vibrate(200); // 1, 2번째 피격 시 짧은 진동
                         // 라이프가 남았으면 제자리로 부활
                         player.x = canvas.width / 2;
                         player.y = canvas.height - 50;
@@ -528,10 +530,12 @@
                         spawnParticles(player.x, player.y, '#0ff', 40); // 우주선 대폭발
                         spawnParticles(player.x, player.y, '#fff', 20); // 번쩍이는 하얀 파편
                         SoundFX.playGameOver(); // 사망 시 긴 폭발음 재생
+                        if (navigator.vibrate) navigator.vibrate([400, 100, 400]); // 사망 시 진동
                         gameOver();
                     } else {
                         spawnParticles(player.x, player.y, '#f00', 10); // 피격 시 빨간 파편 살짝 튐
                         SoundFX.playDamage(); // 일반 피격 전용 사운드 (둔탁한 소리)
+                        if (navigator.vibrate) navigator.vibrate(200); // 피격 시 진동
                     }
                 }
             });
@@ -550,10 +554,12 @@
                         spawnParticles(player.x, player.y, '#0ff', 40);
                         spawnParticles(player.x, player.y, '#fff', 20);
                         SoundFX.playGameOver(); // 사망 시 긴 폭발음 재생
+                        if (navigator.vibrate) navigator.vibrate([400, 100, 400]);
                         gameOver();
                     } else {
                         spawnParticles(player.x, player.y, '#f00', 10);
                         SoundFX.playDamage();
+                        if (navigator.vibrate) navigator.vibrate(200);
                     }
                 }
             }
