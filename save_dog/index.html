@@ -235,7 +235,8 @@
         let lastShieldHitTime = 0;
         let gameOverTimer = null;
 
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        // 확실한 모바일 및 터치 기기 감지
+        const isMobile = /Mobi|Android/i.test(navigator.userAgent) || ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 
         // --- DOM 요소 ---
         const uiTimer = document.getElementById('timer');
@@ -568,7 +569,8 @@
                     label: 'bee',
                     frictionAir: 0.01, // 미친 속도로 돌진
                     restitution: 0.1,  // 튕기지 않고 들러붙어 밈
-                    density: 0.005
+                    density: 0.005,
+                    stuckTimer: 0 // 벌이 지형에 막혀있는 시간을 재기 위한 변수
                 });
                 bees.push(bee);
                 Composite.add(world, bee);
@@ -589,22 +591,36 @@
                     let norm = Vector.normalise(dir);
                     
                     // 강아지를 향한 무조건 돌진 힘 (하늘에서 떨어지지 않고 직접 날아감)
-                    let forceMag = (0.0008 + (currentLevel * 0.0003)) * (isMobile ? 0.5 : 1.0); 
+                    let forceMag = (0.0005 + (currentLevel * 0.0001)) * (isMobile ? 0.7 : 1.0); // 힘 상한선 대폭 낮춤
                     Body.applyForce(bee, bee.position, Vector.mult(norm, forceMag));
 
                     // 레벨별 최대 속도 리밋 해제
-                    let maxSpeed = (15 + currentLevel * 2) * (isMobile ? 0.5 : 1.0);
+                    let maxSpeed = (8 + currentLevel * 1.5) * (isMobile ? 0.7 : 1.0); // 보이지 않게 폭주하는 것 방지
                     let speed = Vector.magnitude(bee.velocity);
                     
                     if (speed > maxSpeed) {
                         Body.setVelocity(bee, Vector.mult(Vector.normalise(bee.velocity), maxSpeed));
                     }
 
-                    // 지그재그 비행 및 공격적인 틈새 파고들기 모션
+                    // [핵심] 장애물 우회 (Stuck) AI
+                    // 강아지와 거리가 먼데 속도가 너무 느리다 = 가시 벽이나 동굴 천장에 머리를 박고 있다
+                    if (dist > 100 && speed < 1.5) {
+                        bee.stuckTimer++;
+                    } else {
+                        bee.stuckTimer = 0;
+                    }
+
+                    // 30프레임(약 0.5초) 동안 막혀있으면 위로 솟구치며 튕겨 오름 (장애물 넘기)
+                    if (bee.stuckTimer > 30) {
+                        Body.applyForce(bee, bee.position, { x: (Math.random() - 0.5) * 0.005, y: -0.015 });
+                        bee.stuckTimer = 0;
+                    }
+
+                    // 지그재그 비행 (강도 낮춤)
                     if (dist < 400) {
                         let wiggle = { 
-                            x: (Math.random() - 0.5) * 0.004 * currentLevel * (isMobile ? 0.5 : 1.0), 
-                            y: (Math.random() - 0.5) * 0.004 * currentLevel * (isMobile ? 0.5 : 1.0) 
+                            x: (Math.random() - 0.5) * 0.002 * currentLevel * (isMobile ? 0.5 : 1.0), 
+                            y: (Math.random() - 0.5) * 0.002 * currentLevel * (isMobile ? 0.5 : 1.0) 
                         };
                         Body.applyForce(bee, bee.position, wiggle);
                     }
