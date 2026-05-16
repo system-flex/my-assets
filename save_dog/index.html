@@ -602,18 +602,28 @@
                         Body.setVelocity(bee, Vector.mult(Vector.normalise(bee.velocity), maxSpeed));
                     }
 
-                    // [핵심] 장애물 우회 (Stuck) AI
-                    // 강아지와 거리가 먼데 속도가 너무 느리다 = 가시 벽이나 동굴 천장에 머리를 박고 있다
-                    if (dist > 100 && speed < 1.5) {
+                    // [핵심] 장애물 우회 (Stuck) AI 2.0
+                    // 강아지와 거리가 먼데 속도가 느리거나 비비적거린다 = 장애물에 막힘
+                    if (dist > 100 && speed < 3.0) {
                         bee.stuckTimer++;
                     } else {
-                        bee.stuckTimer = 0;
+                        bee.stuckTimer = Math.max(0, bee.stuckTimer - 1); // 일시적으로 풀린 척하는 현상 방지
                     }
 
-                    // 30프레임(약 0.5초) 동안 막혀있으면 위로 솟구치며 튕겨 오름 (장애물 넘기)
-                    if (bee.stuckTimer > 30) {
-                        Body.applyForce(bee, bee.position, { x: (Math.random() - 0.5) * 0.005, y: -0.015 });
-                        bee.stuckTimer = 0;
+                    // 일정 시간 막혀있으면 회피를 위한 강력한 소용돌이 기동(Sweep) 시작
+                    if (bee.stuckTimer > 20) {
+                        let time = performance.now() * 0.005;
+                        let sweepX = Math.cos(time + bee.id) * 0.008 * (isMobile ? 0.7 : 1.0);
+                        let sweepY = Math.sin(time + bee.id) * 0.008 * (isMobile ? 0.7 : 1.0);
+                        
+                        // 레벨 구조에 따른 보정: 화면 하단(레벨8 등)에선 위로 강하게 점프, 상단(레벨3 천장)에선 아래로 파고듦
+                        if (bee.position.y > height / 2) {
+                            sweepY -= 0.015; 
+                        } else {
+                            sweepY += 0.010; 
+                        }
+
+                        Body.applyForce(bee, bee.position, { x: sweepX, y: sweepY });
                     }
 
                     // 지그재그 비행 (강도 낮춤)
