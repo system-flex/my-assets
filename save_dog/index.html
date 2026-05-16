@@ -584,7 +584,22 @@
                 // 벌이 공중에 떠서 날아다니는 것처럼 보이게 중력을 완전히 상쇄
                 Body.applyForce(bee, bee.position, { x: 0, y: -engine.world.gravity.y * engine.world.gravity.scale * bee.mass });
 
-                let dir = Vector.sub(dog.position, bee.position);
+                // [완벽한 길찾기 내비게이션 AI 도입] 무식하게 직진하지 않고 특정 지형에서는 중간 목표(Waypoint)를 경유
+                let targetPos = { x: dog.position.x, y: dog.position.y };
+
+                if (currentLevel === 3) {
+                    // 레벨 3: 천장에 머리를 박지 않도록 우선 바닥(아래)으로 내려온 뒤 우측 강아지에게 향함
+                    if (bee.position.x < width / 2 + 50 && bee.position.y < height - 150) {
+                        targetPos = { x: width / 4, y: height - 40 }; 
+                    }
+                } else if (currentLevel === 8) {
+                    // 레벨 8: 거대 가시벽을 피하기 위해 화면 윗부분(벽 왼쪽 너머)을 먼저 찍고 내려감
+                    if (bee.position.x > width / 2 - 30) {
+                        targetPos = { x: width / 2 - 30, y: 30 }; 
+                    }
+                }
+
+                let dir = Vector.sub(targetPos, bee.position);
                 let dist = Vector.magnitude(dir);
                 
                 if (dist > 0) {
@@ -592,37 +607,19 @@
                     let maxSpeed = (8 + currentLevel * 1.5) * (isMobile ? 0.7 : 1.0); // 보이지 않게 폭주하는 것 방지
                     let speed = Vector.magnitude(bee.velocity);
                     
-                    // [핵심] 장애물 우회 (Stuck) AI 4.0 - 지형 맞춤형 악랄한 돌파
-                    if (dist > 80 && speed < 5.0) { // 막힘 판정 기준을 더 예민하게(빠르게) 변경
+                    // 방어벽에 들러붙었을 때 파고들기 위한 드릴 AI (stuckTimer)
+                    if (dist > 50 && speed < 2.0) { 
                         bee.stuckTimer++;
                     } else {
-                        bee.stuckTimer = Math.max(0, bee.stuckTimer - 1);
+                        bee.stuckTimer = 0; // 어설픈 튕김을 막기 위해 확실하게 초기화
                     }
 
-                    // 10프레임(약 0.15초) 이상 막히면 즉시 강제 회피 기동!
-                    if (bee.stuckTimer > 10) {
+                    if (bee.stuckTimer > 15) {
+                        // 방어벽 틈새를 미친듯이 비집고 들어가는 회피/드릴 기동
                         let time = performance.now() * 0.01;
-                        let sweepX = Math.cos(time + bee.id) * 0.02 + (Math.random() - 0.5) * 0.03;
-                        let sweepY = Math.sin(time + bee.id) * 0.02 + (Math.random() - 0.5) * 0.03;
-                        
-                        if (currentLevel === 3) {
-                            // 레벨3: L자 천장 위에서 낑기므로 무조건 왼쪽으로 빼서 아래로 파고들게 함
-                            sweepX -= 0.04;
-                            sweepY += 0.02;
-                        } else if (currentLevel === 8) {
-                            // 레벨8: 거대 가시벽을 넘어야 하므로 무조건 위로 강력하게 치솟게 함
-                            sweepY -= 0.06;
-                        } else {
-                            // 기본 회피: 약간 위로 솟구치며 흩어짐
-                            sweepY -= 0.02;
-                        }
-
-                        Body.applyForce(bee, bee.position, { x: sweepX, y: sweepY });
-                        
-                        // 갇혔을 때는 폭주를 허용하여 벽을 비비고 넘어오게 함
-                        if (speed > maxSpeed * 2.5) {
-                            Body.setVelocity(bee, Vector.mult(Vector.normalise(bee.velocity), maxSpeed * 2.5));
-                        }
+                        let drillX = Math.cos(time + bee.id) * 0.02 + (Math.random() - 0.5) * 0.02;
+                        let drillY = Math.sin(time + bee.id) * 0.02 + (Math.random() - 0.5) * 0.02;
+                        Body.applyForce(bee, bee.position, { x: drillX, y: drillY });
                     } else {
                         // 평상시: 강아지를 향해 돌진
                         let forceMag = (0.0005 + (currentLevel * 0.0001)) * (isMobile ? 0.7 : 1.0); 
